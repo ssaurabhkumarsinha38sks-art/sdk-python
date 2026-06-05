@@ -6,6 +6,7 @@ Created on Nov 1, 2015
 import abc
 import logging
 import pyxb
+import re
 import sys
 import xml.dom.minidom
 import requests
@@ -23,6 +24,62 @@ from authorizenet.apicontractsv1 import ANetApiResponse
 anetLogger = logging.getLogger(constants.defaultLoggerName)
 anetLogger.addHandler(logging.NullHandler())
 logging.getLogger('pyxb.binding.content').addHandler(logging.NullHandler())
+
+# Sensitive XML elements that should be fully masked in logs (credentials/secrets)
+_FULLY_MASKED_TAGS = [
+    'transactionKey',
+    'cardCode',
+    'pin',
+    'password',
+]
+
+# Sensitive XML elements that should be partially masked (show last 4 chars)
+_PARTIAL_MASKED_TAGS = [
+    'cardNumber',
+    'accountNumber',
+    'routingNumber',
+    'expirationDate',
+    'bankAccountNum',
+    'bankRoutingNum',
+    'creditCardNumberMasked',
+    'bankAccountNumberMasked',
+]
+
+def _mask_partial(value, visible_chars=4):
+    """Mask a value showing only the last N characters."""
+    if not value or len(value) <= visible_chars:
+        return 'XXXX'
+    return 'X' * (len(value) - visible_chars) + value[-visible_chars:]
+
+def _sanitize_xml_for_logging(xml_string):
+    """
+    Sanitize XML string by masking sensitive fields before logging.
+    This prevents PCI-sensitive data and API credentials from being exposed in logs.
+    - Credentials (transactionKey, cardCode, pin, password): Fully masked
+    - Card/Account numbers: Partial masked (last 4 visible, e.g., XXXXXXXXXXXX1111)
+    """
+    if xml_string is None:
+        return xml_string
+    
+    sanitized = xml_string if isinstance(xml_string, str) else xml_string.decode('utf-8')
+    
+    # Fully mask credentials and secrets
+    for tag in _FULLY_MASKED_TAGS:
+        pattern = r'(<{0}>)[^<]*(</{0}>)'.format(tag)
+        sanitized = re.sub(pattern, r'\1[REDACTED]\2', sanitized)
+    
+    # Partially mask card/account numbers (show last 4)
+    for tag in _PARTIAL_MASKED_TAGS:
+        pattern = r'<{0}>([^<]*)</{0}>'.format(tag)
+        def make_replacer(tag_name):
+            def replacer(match):
+                value = match.group(1)
+                masked = _mask_partial(value)
+                return '<{0}>{1}</{0}>'.format(tag_name, masked)
+            return replacer
+        sanitized = re.sub(pattern, make_replacer(tag), sanitized)
+    
+    return sanitized
 
 class APIOperationBaseInterface(object):
     
@@ -112,7 +169,7 @@ class APIOperationBase(APIOperationBaseInterface):
     def getprettyxmlrequest(self):
         xmlRequest = self.buildrequest()
         requestDom = xml.dom.minidom.parseString(xmlRequest)
-        anetLogger.debug('Request is: %s' % requestDom.toprettyxml())
+        anetLogger.debug('Request is: %s' % _sanitize_xml_for_logging(requestDom.toprettyxml()))
 
         return requestDom
     
@@ -134,7 +191,7 @@ class APIOperationBase(APIOperationBaseInterface):
             xmlRequest = self.buildrequest()
             self._httpResponse = requests.post(self.endpoint, data=xmlRequest, headers=constants.headers, proxies=proxyDictionary)
         except Exception as httpException:
-            anetLogger.error( 'Error retrieving http response from: %s for request: %s', self.endpoint, self.getprettyxmlrequest())
+            anetLogger.error( 'Error retrieving http response from: %s for request: %s', self.endpoint, _sanitize_xml_for_logging(self.buildrequest()))
             anetLogger.error( 'Exception: %s, %s', type(httpException), httpException.args )
 
 
