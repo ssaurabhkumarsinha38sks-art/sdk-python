@@ -25,12 +25,20 @@ anetLogger = logging.getLogger(constants.defaultLoggerName)
 anetLogger.addHandler(logging.NullHandler())
 logging.getLogger('pyxb.binding.content').addHandler(logging.NullHandler())
 
-# Sensitive XML elements that should be fully masked in logs (credentials/secrets)
+# Sensitive XML elements that should be fully masked in logs (credentials/secrets/SAD)
 _FULLY_MASKED_TAGS = [
     'transactionKey',
     'cardCode',
     'pin',
     'password',
+    'name',              # API Login ID in merchantAuthentication
+    'sessionToken',
+    'track1',            # Magnetic stripe Sensitive Authentication Data (SAD)
+    'track2',            # Magnetic stripe Sensitive Authentication Data (SAD)
+    'cryptogram',        # Payment cryptogram
+    'dataValue',         # Accept.js opaque payment nonce
+    'nameOnAccount',
+    'expirationDate',    # Card expiration - fully mask per PCI
 ]
 
 # Sensitive XML elements that should be partially masked (show last 4 chars)
@@ -38,7 +46,6 @@ _PARTIAL_MASKED_TAGS = [
     'cardNumber',
     'accountNumber',
     'routingNumber',
-    'expirationDate',
     'bankAccountNum',
     'bankRoutingNum',
     'creditCardNumberMasked',
@@ -219,10 +226,10 @@ class APIOperationBase(APIOperationBaseInterface):
                     if self._response.messages.resultCode == "Error":
                         anetLogger.debug("Response error")
                     domResponse = xml.dom.minidom.parseString(self._httpResponse.encode('utf-8'))
-                    anetLogger.debug('Received response: %s' % domResponse.toprettyxml(encoding='utf-8'))
+                    anetLogger.debug('Received response: %s' % _sanitize_xml_for_logging(domResponse.toprettyxml(encoding='utf-8')))
                 else:
                     #Need to handle ErrorResponse  
-                    anetLogger.debug('Error retrieving response for request: %s' % self._request)
+                    anetLogger.debug('Error retrieving response for request: %s' % _sanitize_xml_for_logging(str(self._request)))
         else:
             anetLogger.debug("Did not receive http response")
         return
