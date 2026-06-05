@@ -9,7 +9,7 @@ import pyxb
 import sys
 import xml.dom.minidom
 import requests
-from lxml import objectify
+from lxml import etree, objectify
 
 from authorizenet.constants import constants
 from authorizenet import apicontractsv1
@@ -142,13 +142,21 @@ class APIOperationBase(APIOperationBaseInterface):
             self._httpResponse.encoding = constants.response_encoding
             self._httpResponse = self._httpResponse.text[3:] #strip BOM
             self.afterexecute()
+            
+            # Create secure XML parser to prevent XXE attacks
+            secure_parser = etree.XMLParser(
+                resolve_entities=False,
+                no_network=True,
+                dtd_validation=False,
+                load_dtd=False
+            )
             try:
                 self._response = apicontractsv1.CreateFromDocument(self._httpResponse) 
                 #objectify code  
                 xmlResponse= self._response.toxml(encoding=constants.xml_encoding, element_name=self.getrequesttype()) 
                 xmlResponse = xmlResponse.replace(constants.nsNamespace1, b'')
                 xmlResponse = xmlResponse.replace(constants.nsNamespace2, b'') 
-                self._mainObject = objectify.fromstring(xmlResponse)   
+                self._mainObject = objectify.fromstring(xmlResponse, parser=secure_parser)   
                  
             except Exception as objectifyexception:
                 anetLogger.error( 'Create Document Exception: %s, %s', type(objectifyexception), objectifyexception.args )
@@ -156,7 +164,7 @@ class APIOperationBase(APIOperationBaseInterface):
 
                 # removing encoding attribute as objectify fails if it is present
                 responseString = responseString.replace('encoding=\"utf-8\"', '')
-                self._mainObject = objectify.fromstring(responseString) 
+                self._mainObject = objectify.fromstring(responseString, parser=secure_parser) 
             else:
                 if type(self.getresponseclass()) != type(self._mainObject):
                     if self._response.messages.resultCode == "Error":
