@@ -7,6 +7,7 @@ import abc
 import logging
 import pyxb
 import sys
+import threading
 import xml.dom.minidom
 import requests
 from lxml import objectify
@@ -75,6 +76,7 @@ class APIOperationBase(APIOperationBaseInterface):
     
     __metaclass__ = abc.ABCMeta 
     __initialized = False
+    __environment_lock = threading.Lock()
     __merchantauthentication = "null"
     __environment = "null"
     
@@ -118,7 +120,12 @@ class APIOperationBase(APIOperationBaseInterface):
     
     def execute(self):
         
-        self.endpoint = self._environment
+        # Read environment at execute time with lock to ensure consistency
+        with APIOperationBase.__environment_lock:
+            # Initialize class environment to SANDBOX if not already set
+            if APIOperationBase.__environment == "null":
+                APIOperationBase.__environment = constants.SANDBOX
+            self.endpoint = APIOperationBase.__environment
               
         anetLogger.debug('Executing http post to url: %s', self.endpoint)
         
@@ -212,12 +219,14 @@ class APIOperationBase(APIOperationBaseInterface):
     
     @staticmethod
     def getenvironment():
-        return APIOperationBase.__environment
+        with APIOperationBase.__environment_lock:
+            return APIOperationBase.__environment
         
     
     @staticmethod
     def setenvironment(userenvironment):
-        APIOperationBase.__environment = userenvironment 
+        with APIOperationBase.__environment_lock:
+            APIOperationBase.__environment = userenvironment 
         return 
     
     def __init__(self, apiRequest):
@@ -233,14 +242,6 @@ class APIOperationBase(APIOperationBaseInterface):
             raise ValueError('Input request cannot be null')
          
         self._request = apiRequest
-        
-        # Initialize class environment to SANDBOX if not already set
-        if APIOperationBase.__environment == "null":
-            APIOperationBase.__environment = constants.SANDBOX
-        
-        # Capture the current class environment into instance variable
-        # This prevents other threads from resetting the environment after this instance is created
-        self._environment = APIOperationBase.__environment
         
         __merchantauthentication = apicontractsv1.merchantAuthenticationType()
         APIOperationBase.setmerchantauthentication(__merchantauthentication)
