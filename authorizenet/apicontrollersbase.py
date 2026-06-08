@@ -118,7 +118,7 @@ class APIOperationBase(APIOperationBaseInterface):
     
     def execute(self):
         
-        self.endpoint = APIOperationBase.__environment
+        self.endpoint = self._environment
               
         anetLogger.debug('Executing http post to url: %s', self.endpoint)
         
@@ -193,8 +193,8 @@ class APIOperationBase(APIOperationBaseInterface):
         return 
     
     @staticmethod
-    def getmerchantauthentication(self):
-        return self.__merchantauthentication
+    def getmerchantauthentication():
+        return APIOperationBase.__merchantauthentication
     
     @staticmethod
     def setmerchantauthentication(merchantauthentication):
@@ -204,14 +204,14 @@ class APIOperationBase(APIOperationBaseInterface):
     def validateandsetmerchantauthentication(self):
         anetapirequest = apicontractsv1.ANetApiRequest()
         if (anetapirequest.merchantAuthentication == "null"):
-            if (self.getmerchantauthentication() != "null"):
-                anetapirequest.merchantAuthentication = self.getmerchantauthentication()
+            if (APIOperationBase.getmerchantauthentication() != "null"):
+                anetapirequest.merchantAuthentication = APIOperationBase.getmerchantauthentication()
             else:
                 raise ValueError('Merchant Authentication can not be null')
         return
     
     @staticmethod
-    def getenvironment(self):
+    def getenvironment():
         return APIOperationBase.__environment
         
     
@@ -233,9 +233,16 @@ class APIOperationBase(APIOperationBaseInterface):
             raise ValueError('Input request cannot be null')
          
         self._request = apiRequest
-        __merchantauthentication = apicontractsv1.merchantAuthenticationType()
-        APIOperationBase.__environment = constants.SANDBOX
         
+        # Initialize class environment to SANDBOX if not already set
+        if APIOperationBase.__environment == "null":
+            APIOperationBase.__environment = constants.SANDBOX
+        
+        # Capture the current class environment into instance variable
+        # This prevents other threads from resetting the environment after this instance is created
+        self._environment = APIOperationBase.__environment
+        
+        __merchantauthentication = apicontractsv1.merchantAuthenticationType()
         APIOperationBase.setmerchantauthentication(__merchantauthentication)
         self.validate()
             
